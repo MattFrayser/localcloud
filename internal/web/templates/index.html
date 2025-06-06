@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalCloud Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .modal-bg {
+            background: rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold mb-8 text-blue-700">LocalCloud Dashboard</h1>
+
+        <!-- Container Management -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Containers</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Image</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="containerList" class="bg-white divide-y divide-gray-200">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Modal for logs -->
+        <div id="logModal" class="fixed inset-0 flex items-center justify-center z-50 hidden">
+            <div class="modal-bg absolute inset-0"></div>
+            <div class="bg-white rounded-lg shadow-lg p-6 z-10 max-w-2xl w-full relative">
+                <button onclick="closeLogModal()" class="absolute top-2 right-2 text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
+                <h3 class="text-lg font-semibold mb-4">Container Logs</h3>
+                <pre id="logContent" class="bg-gray-900 text-green-200 rounded p-4 overflow-x-auto max-h-96"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set up SSE for real-time updates
+        let evtSource = null;
+
+        function setupEventSource() {
+            if (evtSource) {
+                evtSource.close();
+            }
+
+            evtSource = new EventSource('/events');
+            
+            evtSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.containers) {
+                        updateContainerList(data.containers);
+                    }
+                } catch (error) {
+                    console.error('Error parsing event data:', error);
+                }
+            };
+
+            evtSource.onerror = function(error) {
+                console.error('EventSource error:', error);
+                evtSource.close();
+                setTimeout(setupEventSource, 5000);
+            };
+        }
+
+        // Initial setup
+        setupEventSource();
+
+        function updateContainerList(containers) {
+            const tbody = document.getElementById('containerList');
+            tbody.innerHTML = '';
+            containers.forEach(container => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">${container.ID.substring(0, 12)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${container.Name || 'N/A'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${container.Image || 'N/A'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${container.Status || 'N/A'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button onclick="viewLogs('${container.ID}')" class="text-blue-600 hover:text-blue-900">View Logs</button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        async function viewLogs(id) {
+            try {
+                const response = await fetch(`/api/containers/${id}/logs`);
+                if (!response.ok) throw new Error('Failed to fetch logs');
+                const logs = await response.text();
+                
+                document.getElementById('logContent').textContent = logs;
+                document.getElementById('logModal').classList.remove('hidden');
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+                alert('Failed to fetch container logs');
+            }
+        }
+
+        function closeLogModal() {
+            document.getElementById('logModal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html> 
