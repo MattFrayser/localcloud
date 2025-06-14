@@ -1,10 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"localcloud/internal/api"
 	"localcloud/internal/compute"
-	"localcloud/internal/web"
+	"localcloud/internal/config"
+	"log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -14,23 +15,7 @@ var (
 	rootCmd = &cobra.Command{
 		Use:   "localcloud",
 		Short: "LocalCloud - A local cloud computing platform",
-	}
-
-	newCmd = &cobra.Command{
-		Use:   "new",
-		Short: "Create a new container",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			computeManager, err := compute.NewInstanceManager()
-			if err != nil {
-				return fmt.Errorf("failed to initialize compute manager: %v", err)
-			}
-			container, err := computeManager.CreateInstance(context.Background(), "nginx:latest", "80:80", nil)
-			if err != nil {
-				return fmt.Errorf("failed to create container: %v", err)
-			}
-			fmt.Printf("Created container: %s\n", container.ID)
-			return nil
-		},
+		Long:  "Learn cloud operations safely on your local machine with AWS-like container services",
 	}
 
 	webCmd = &cobra.Command{
@@ -38,18 +23,63 @@ var (
 		Short: "Start the web interface",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			port, _ := cmd.Flags().GetInt("port")
-			if port == 0 {
-				port = 8080
-			}
-			computeManager, err := compute.NewInstanceManager()
+			cfg := config.New()
+			cfg.Port = port
+
+			manager, err := compute.NewManager()
 			if err != nil {
-				return fmt.Errorf("failed to initialize compute manager: %v", err)
+				return fmt.Errorf("failed to initialize compute manager: %w", err)
 			}
-			server, err := web.NewServer(computeManager)
+
+			server := api.NewServer(manager, cfg)
+			return server.Start()
+		},
+	}
+
+	listCmd = &cobra.Command{
+		Use:   "list",
+		Short: "List all containers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manager, err := compute.NewManager()
 			if err != nil {
-				return fmt.Errorf("failed to create web server: %v", err)
+				return fmt.Errorf("failed to initialize compute manager: %w", err)
 			}
-			return server.Start(fmt.Sprintf(":%d", port))
+
+			instances := manager.List()
+			if len(instances) == 0 {
+				fmt.Println("No containers found")
+				return nil
+			}
+
+			fmt.Printf("%-12s %-20s %-30s %-15s\n", "ID", "NAME", "IMAGE", "STATUS")
+			for _, instance := range instances {
+				fmt.Printf("%-12s %-20s %-30s %-15s\n", 
+					instance.ID[:12], instance.Name, instance.Image, instance.Status)
+			}
+			return nil
+		},
+	}
+
+	newCmd = &cobra.Command{
+		Use:   "new",
+		Short: "Create a new container",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			image, _ := cmd.Flags().GetString("image")
+			name, _ := cmd.Flags().GetString("name")
+			ports, _ := cmd.Flags().GetString("ports")
+
+			manager, err := compute.NewManager()
+			if err != nil {
+				return fmt.Errorf("failed to initialize compute manager: %w", err)
+			}
+
+			instance, err := manager.Create(image, name, ports)
+			if err != nil {
+				return fmt.Errorf("failed to create container: %w", err)
+			}
+
+			fmt.Printf("Created container: %s (%s)\n", instance.Name, instance.ID[:12])
+			return nil
 		},
 	}
 
@@ -58,41 +88,77 @@ var (
 		Short: "Execute a command in a container",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			containerID, _ := cmd.Flags().GetString("id")
-			command, _ := cmd.Flags().GetString("c")
-			if containerID == "" {
-				return fmt.Errorf("container ID is required")
+			command, _ := cmd.Flags().GetString("command")
+
+			if containerID == "" || command == "" {
+				return fmt.Errorf("both --id and --command are required")
 			}
-			if command == "" {
-				return fmt.Errorf("command is required")
-			}
-			computeManager, err := compute.NewInstanceManager()
+
+			manager, err := compute.NewManager()
 			if err != nil {
-				return fmt.Errorf("failed to initialize compute manager: %v", err)
+				return fmt.Errorf("failed to initialize compute manager: %w", err)
 			}
-			output, err := computeManager.ExecCommand(containerID, command)
+
+			output, err := manager.Exec(containerID, command)
 			if err != nil {
-				return fmt.Errorf("failed to execute command: %v", err)
+				return fmt.Errorf("failed to execute command: %w", err)
 			}
+
 			fmt.Print(output)
+			return nil
+		},
+	}
+
+	deleteCmd = &cobra.Command{
+		Use:   "delete",
+		Short: "Delete a container",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			containerID, _ := cmd.Flags().GetString("id")
+			if containerID == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			manager, err := compute.NewManager()
+			if err != nil {
+				return fmt.Errorf("failed to initialize compute manager: %w", err)
+			}
+
+			if err := manager.Delete(containerID); err != nil {
+				return fmt.Errorf("failed to delete container: %w", err)
+			}
+
+			fmt.Printf("Deleted container: %s\n", containerID[:12])
 			return nil
 		},
 	}
 )
 
 func init() {
+	// Web command flags
 	webCmd.Flags().Int("port", 8080, "Port to run the web interface on")
+
+	// New command flags
+	newCmd.Flags().String("image", "nginx:latest", "Container image")
+	newCmd.Flags().String("name", "", "Container name (auto-generated if empty)")
+	newCmd.Flags().String("ports", "80:80", "Port mapping (host:container)")
+
+	// Exec command flags
 	execCmd.Flags().String("id", "", "Container ID")
-	execCmd.Flags().String("c", "", "Command to execute")
+	execCmd.Flags().String("command", "", "Command to execute")
 	execCmd.MarkFlagRequired("id")
-	execCmd.MarkFlagRequired("c")
-	rootCmd.AddCommand(newCmd)
-	rootCmd.AddCommand(webCmd)
-	rootCmd.AddCommand(execCmd)
+	execCmd.MarkFlagRequired("command")
+
+	// Delete command flags
+	deleteCmd.Flags().String("id", "", "Container ID")
+	deleteCmd.MarkFlagRequired("id")
+
+	// Add commands
+	rootCmd.AddCommand(webCmd, listCmd, newCmd, execCmd, deleteCmd)
 }
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		log.Fatal(err)
 		os.Exit(1)
 	}
 }
