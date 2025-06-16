@@ -1,3 +1,4 @@
+// Provide Live conatiner updates 
 package api
 
 import (
@@ -10,9 +11,11 @@ import (
 )
 
 func (s *Server) handleWebSocket(c *gin.Context) {
+
+	// Upgrade HTTP to websocket
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
-			return true
+			return true // Allow all origins 
 		},
 	}
 
@@ -34,7 +37,8 @@ func (s *Server) handleWebSocket(c *gin.Context) {
 		log.Printf("WebSocket initial write error: %v", err)
 		return
 	}
-
+	
+	// Refresh data every 2 seconds
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 

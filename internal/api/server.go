@@ -1,3 +1,4 @@
+// Central server and API setup	
 package api
 
 import (
@@ -28,7 +29,7 @@ func NewServer(manager *compute.Manager, cfg *config.Config) *Server {
 	}
 
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(gin.Logger(), gin.Recovery()) // logging and recovery middleware
 	
 	s := &Server{
 		manager: manager,
@@ -40,12 +41,14 @@ func NewServer(manager *compute.Manager, cfg *config.Config) *Server {
 	return s
 }
 
+// Start http server
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.config.Port)
 	log.Printf("LocalCloud web interface starting on http://localhost%s", addr)
 	return s.router.Run(addr)
 }
 
+// Define all API endpoints
 func (s *Server) setupRoutes() {
 	// Serve static dashboard
 	s.router.GET("/", s.handleDashboard)

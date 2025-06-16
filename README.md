@@ -7,15 +7,23 @@ LocalCloud is a lightweight local cloud platform that provides container service
 ### Container Management
 - Create and manage Docker containers
 - Execute commands inside containers
-- View container logs and statistics
+- View real time container logs and metrics
+- Monitor container status and uptime
 
+### Web interface
+- Easy management of containers
+- Real-time updates via WebSocket
+
+### CLI interface
+- Full command line support for all Operationsions
+- Compatible with Docker workflows
 
 ## Installation
 
-1. Ensure you have Go 1.21 or later installed
+1. Ensure you have Go 1.21 or later installed, and Docker running on your machine.
 2. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/localcloud.git
+   git clone https://github.com/mattfrayser/localcloud.git
    cd localcloud
    ```
 3. Install dependencies:
@@ -29,36 +37,25 @@ LocalCloud is a lightweight local cloud platform that provides container service
 
 ## Usage
 
-### Container Operations
-
+### Start Web interface
 ```bash
-# Start the web interface
-localcloud web 
+# Start web interface (default port 8080)
+./localcloud web
+
+# Start web interface on a specific port
+./localcloud web --port 8081
+```
+### CLI Commands
+```bash
 # Create new 
 localcloud new
+
 # List containers
 localcloud list
+
 # Run commands
 localcloud exec --id <ID> --c <COMMAND>
+
 # Delete
 localcloud delete --id <ID>
 ```
-
-### Web View
-
-```bash
-# Start the web interface
-localcloud web 
-```
-
-Then open http://localhost:8080 in your browser to view active container:
-- IDs
-- Names
-- Images
-- Up time
-- Logs
-
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 

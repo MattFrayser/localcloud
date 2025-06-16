@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Docker container info
 type Instance struct {
 	ID      string    `json:"id"`
 	Name    string    `json:"name"`
@@ -24,7 +25,7 @@ type Instance struct {
 	Created time.Time `json:"created"`
 	Uptime  string    `json:"uptime"`
 }
-
+// Docker container metrics
 type Metrics struct {
 	ID          string  `json:"id"`
 	CPUPercent  float64 `json:"cpu_percent"`
@@ -34,12 +35,13 @@ type Metrics struct {
 	NetworkTx   uint64  `json:"network_tx"`
 	Timestamp   time.Time `json:"timestamp"`
 }
-
+// API client
 type Manager struct {
 	client *client.Client
 }
 
 func NewManager() (*Manager, error) {
+	// Create Docker client
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
@@ -54,6 +56,7 @@ func NewManager() (*Manager, error) {
 	return &Manager{client: cli}, nil
 }
 
+// Commands 
 func (m *Manager) List() []Instance {
 	containers, err := m.client.ContainerList(context.Background(), types.ContainerListOptions{All: true})
 	if err != nil {
@@ -79,6 +82,8 @@ func (m *Manager) Create(image, name, portMapping string) (*Instance, error) {
 
 	// Parse port mapping
 	hostConfig := &container.HostConfig{}
+	
+	// If custom port mapping is provided, parse it
 	if portMapping != "" {
 		portBindings, exposedPorts, err := parsePortMapping(portMapping)
 		if err != nil {
@@ -90,12 +95,12 @@ func (m *Manager) Create(image, name, portMapping string) (*Instance, error) {
 			Image:        image,
 			ExposedPorts: exposedPorts,
 		}
-
+		// Create container
 		resp, err := m.client.ContainerCreate(ctx, config, hostConfig, nil, nil, name)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create container: %w", err)
 		}
-
+		// Start container
 		if err := m.client.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
 			return nil, fmt.Errorf("failed to start container: %w", err)
 		}
@@ -136,7 +141,7 @@ func (m *Manager) Delete(containerID string) error {
 		// Continue even if stop fails (container might already be stopped)
 	}
 
-	// Remove container
+	// Remove container, clean up
 	return m.client.ContainerRemove(ctx, containerID, types.ContainerRemoveOptions{Force: true})
 }
 
@@ -148,12 +153,12 @@ func (m *Manager) Exec(containerID, command string) (string, error) {
 		AttachStdout: true,
 		AttachStderr: true,
 	}
-
+	// Create exec session
 	execID, err := m.client.ContainerExecCreate(ctx, containerID, execConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to create exec: %w", err)
 	}
-
+	// Run
 	resp, err := m.client.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{})
 	if err != nil {
 		return "", fmt.Errorf("failed to attach exec: %w", err)
@@ -193,7 +198,7 @@ func (m *Manager) GetLogs(containerID string, tail int) (string, error) {
 
 func (m *Manager) GetMetrics(containerID string) (*Metrics, error) {
 	ctx := context.Background()
-
+	// Call stats API		
 	stats, err := m.client.ContainerStats(ctx, containerID, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats: %w", err)
@@ -205,6 +210,7 @@ func (m *Manager) GetMetrics(containerID string) (*Metrics, error) {
 		return nil, fmt.Errorf("failed to decode stats: %w", err)
 	}
 
+	// Calculate metrics
 	return &Metrics{
 		ID:          containerID,
 		CPUPercent:  calculateCPUPercent(&containerStats),
@@ -216,19 +222,22 @@ func (m *Manager) GetMetrics(containerID string) (*Metrics, error) {
 	}, nil
 }
 
+// Convert dockers format to Instance struct
 func (m *Manager) containerToInstance(c types.Container) Instance {
 	name := "unknown"
 	if len(c.Names) > 0 {
-		name = strings.TrimPrefix(c.Names[0], "/")
+		name = strings.TrimPrefix(c.Names[0], "/") // Remove leading slash 
 	}
-
+	
+	// Format as host:container
 	ports := ""
 	for _, port := range c.Ports {
 		if port.PublicPort > 0 {
 			ports += fmt.Sprintf("%d:%d ", port.PublicPort, port.PrivatePort)
 		}
 	}
-
+	
+	// Calc time since created
 	uptime := ""
 	if c.State == "running" {
 		created := time.Unix(c.Created, 0)
@@ -246,6 +255,7 @@ func (m *Manager) containerToInstance(c types.Container) Instance {
 	}
 }
 
+// similar to containerToInstance but used after creation
 func (m *Manager) inspectToInstance(c types.ContainerJSON) *Instance {
 	name := strings.TrimPrefix(c.Name, "/")
 	
@@ -276,6 +286,7 @@ func (m *Manager) inspectToInstance(c types.ContainerJSON) *Instance {
 	}
 }
 
+// Parse input port mapping to docker formatting
 func parsePortMapping(mapping string) (nat.PortMap, nat.PortSet, error) {
 	parts := strings.Split(mapping, ":")
 	if len(parts) != 2 {
@@ -296,15 +307,17 @@ func parsePortMapping(mapping string) (nat.PortMap, nat.PortSet, error) {
 }
 
 func calculateCPUPercent(stats *types.StatsJSON) float64 {
+	// Previous vs Current CPU use (normalized)
 	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
 	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
 	
 	if systemDelta > 0 && cpuDelta > 0 {
 		return (cpuDelta / systemDelta) * float64(len(stats.CPUStats.CPUUsage.PercpuUsage)) * 100.0
 	}
-	return 0.0
+	return 0.0 //returned as percent
 }
 
+// Sum network bytes
 func getNetworkRx(networks map[string]types.NetworkStats) uint64 {
 	var total uint64
 	for _, network := range networks {

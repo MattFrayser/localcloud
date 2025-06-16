@@ -14,10 +14,10 @@ import (
 var (
 	rootCmd = &cobra.Command{
 		Use:   "localcloud",
-		Short: "LocalCloud - A local cloud computing platform",
-		Long:  "Learn cloud operations safely on your local machine with AWS-like container services",
+		Short: "LocalCloud",
 	}
-
+	
+	// Start web interface
 	webCmd = &cobra.Command{
 		Use:   "web",
 		Short: "Start the web interface",
@@ -36,6 +36,7 @@ var (
 		},
 	}
 
+	// List containers
 	listCmd = &cobra.Command{
 		Use:   "list",
 		Short: "List all containers",
@@ -60,6 +61,7 @@ var (
 		},
 	}
 
+	// Create New container
 	newCmd = &cobra.Command{
 		Use:   "new",
 		Short: "Create a new container",
@@ -83,6 +85,7 @@ var (
 		},
 	}
 
+	// Execute command in a container
 	execCmd = &cobra.Command{
 		Use:   "exec",
 		Short: "Execute a command in a container",
@@ -109,6 +112,7 @@ var (
 		},
 	}
 
+	// Delete a container	
 	deleteCmd = &cobra.Command{
 		Use:   "delete",
 		Short: "Delete a container",
